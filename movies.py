@@ -187,25 +187,20 @@
 # ```
 
 # %%
-from sklearn.preprocessing import PolynomialFeatures
+import random
+import time
 import csv
 import pickle
 import re
 import pandas as pd
-import seaborn as sns
 import matplotlib.pyplot as plt
-import statsmodels.api as sm
-from sklearn.linear_model import LinearRegression
 import dateutil.parser
 from IPython.core.display import display, HTML
 from bs4 import BeautifulSoup
 import requests
 
-%matplotlib inline
 
 # %%
-
-
 def write_pickle(data, file_name):
     """Create a pickle file
 
@@ -281,8 +276,8 @@ def get_html(url):
 
 
 # %%
-movie_titles_2020 = read_pickle('movie_titles_2020')
-movie_data = read_pickle('movie_list')
+movie_titles_2020 = read_pickle('data/movie_titles_2020')
+movie_data = read_pickle('data/movie_list')
 
 
 # %%
@@ -294,16 +289,6 @@ for director in filmography:
         if film['url'].find('tv') == -1:
             flat_filmography.append(
                 {'director': director['name'], 'film': film['name'].contents[0], 'url': film['url']})
-
-
-# %%
-# TODO get studio
-# TODO get number of studios in release
-# TODO get writer?
-# TODO get critic/user ratings?
-
-# TODO get actor filmographies
-# TODO get list of old releases from actor and director filmographies
 
 
 # %%
@@ -347,10 +332,12 @@ def CountFrequency(my_list):
 
 # Filters distributors who have released more than 80 movies over the data set.
 distributor_count = CountFrequency(all_movies[7])
-# dists = list({
-# k: v for (k, v) in distributor_count.items() if (v > 80) and (k != '-')})
+
+# Manually select studios to reduce the number of featurs.
+# dists = list({k: v for (k, v) in distributor_count.items() if (v > 80) and (k != '-')})
 dists = ['Walt Disney Studios Motion Pictures', 'Universal Pictures', 'Twentieth Century Fox',
          'Sony Pictures Entertainment (SPE)', 'Paramount Pictures', 'Warner Bros.']
+
 movie_set = all_movies.loc[all_movies[7].apply(
     lambda x: x in dists), [2, 3, 5, 7]]
 movie_set.columns = ['Gross', 'Theaters', 'Date', 'Distributor']
@@ -363,85 +350,176 @@ movie_set['Theaters'] = movie_set['Theaters'].apply(
 
 
 # %%
-# Creates flags for movie by distributor.
-for distributor in dists:
-    movie_set[distributor.replace(
-        ' ', '')] = movie_set['Distributor'].apply(lambda x: 1 if x == distributor else 0)
+all_movies['Month'] = all_movies['datetime'].dt.month
 
 
 # %%
-movie_set.corr()
+# Functions for scraping TheMovieDB.org
+
+
+def search_tmdb(search_string):
+    """With the given search_string, sends a search request to TheMovieDB.org
+    and returns the search target's page as a BeautifulSoup object.
+
+    Keyword arguments:
+    search_string -- the name for which to search - escaping characters is not necessary.
+    """
+    director_index = None
+    response_text = requests.get(
+        'https://www.themoviedb.org/search/movie?query=' + search_string).text
+    response_soup = BeautifulSoup(response_text, 'lxml')
+    results = response_soup.find(class_='wrapper')
+
+    if results.find('h2').contents[0] == search_string:
+        target_page = requests.get(
+            "https://www.themoviedb.org" + results.find('a', class_='result').get('href'))
+    else:
+        target_page = None
+
+    return target_page.text
+
+
+def get_filmography_from_page(page):
+    """Retrieves a director's filmography from TheMoviedb.org.
+
+    Keyword arguments:
+    page -- the HTML of the director's page
+    """
+    directory = []
+    directing_index = -1
+
+    tabl = page.find_all('div', class_='credits_list')
+    h3 = tabl[0].find_all('h3')
+    for i, node in enumerate(h3):
+        if node.contents[0] == 'Directing':
+            directing_index = i
+            break
+    if len(h3):
+        directing = tabl[0].find_all('table', class_='card credits')[
+            directing_index].find_all('table')
+        for movie in directing:
+            year = movie.find('td', class_='year').contents[0]
+            if year.isnumeric() and int(year) < 2020:
+                aa = movie.find('a')
+                directory.append(
+                    {'name': aa.contents[0], 'url': aa.get('href')})
+
+    return directory
+
+
+def get_movie_details(movie_page):
+    """Extract a movie's details from the source page
+
+    Keyword arguments:
+    movie_page -- the HTML of the movie's page
+    """
+    rating = movie_page.find(
+        'span', class_='certification').contents[0].strip()
+    director_node = movie_page.find('li', class_='profile').find('a')
+    director = {
+        'name': director_node.contents[0], 'url': director_node.get('href')}
+    actor_node = movie_page.find('ol', class_='people scroller').find_all('a')
+    actors = [{'name': a.contents[0], 'url': a.get(
+        'href')} for i, a in enumerate(actor_node[:-1]) if i % 2 == 1]
+    budget = movie_page.find('section', class_='facts left_column').find_all('p')[
+        2].contents[1].strip()
+    genre_node = movie_page.find('span', class_='genres').find_all('a')
+    genre = [{'type': node.contents[0], 'url': node.get(
+        'href')} for node in genre_node]
+    return [rating, director, actors, budget, genre]
 
 
 # %%
-plt.figure(figsize=(20, 20))
-
-sns.heatmap(movie_set.corr(),
-            cmap="seismic", annot=True, vmin=-1, vmax=1)
-plt.gca().set_ylim(len(movie_set.corr())+0.5, -0.5)
+page = search_tmdb('Black Panther')
+deets = get_movie_details(page)
 
 # %%
-sns.pairplot(movie_set, height=1.5, aspect=1)
-# %%
-lr = LinearRegression()
+# maybe
 
-X = movie_set['Theaters'].values.reshape(-1, 1)
 
-y = movie_set['Gross']
+def search_imdb(name):
+    def sanitize(name):
+        clean = name.replace(' ', '+')
+        clean = clean.replace('&', '%26')
 
-lr.fit(X, y)
+        return clean
+
+    search_page = BeautifulSoup(requests.get(
+        'https://www.imdb.com/find?q=' + sanitize(name) + '&ref_=nv_sr_sm').text, 'lxml')
+    target = search_page.find_all('td', class_='result_text')
+    new_url = None
+    for td in target:
+        if td.a.contents[0] == name:
+            new_url = td.a.get('href')
+            break
+
+    if new_url:
+        time.sleep(.5+2*random.random())
+
+        target_page = BeautifulSoup(requests.get(
+            'https://www.imdb.com/' + new_url).text)
+        user_rating = target_page.find(class_='ratingValue').strong.span.contents[0] if target_page.find(
+            class_='ratingValue') else None
+        critic_rating = target_page.find(class_='metacriticScore').span.contents[0] if target_page.find(
+            class_='metacriticScore') else None
+        subtext = target_page.find('div', class_='subtext')
+        if subtext:
+            MPAA = subtext.contents[0].strip()
+            genre = [a.contents[0] for a in subtext.find_all('a')]
+        else:
+            MPAA = None
+            genre = None
+        director = target_page.find(class_='credit_summary_item').find(
+            'a') if target_page.find(class_='credit_summary_item') else None
+        budget = None
+        if target_page.find(id='titleDetails'):
+            details = target_page.find(id='titleDetails').find_all('div')
+            for h4 in details:
+                if h4.find('h4'):
+                    if h4.find('h4').contents[0] == 'Budget:':
+                        budget = h4.contents[2].strip()
+                        break
+
+        result = [name, user_rating, critic_rating,
+                  MPAA, genre, director, budget]
+    else:
+        result = [name, None, None, None, None, None, None]
+
+    return result
+
+
 # %%
-lr.score(X, y)
+
+# movie_data = []
+for title in all_movies[2394:][1]:
+    print(title)
+    movie_data.append(search_imdb(title))
+    time.sleep(.5+2*random.random())
+
 # %%
+
+# %%
+# TODO get studio
+# TODO get number of studios in release
+# TODO get writer?
+# TODO get critic/user ratings?
+
+# TODO get actor filmographies
+# TODO get list of old releases from actor and director filmographies
+
+# TODO get ratings discard 'G'
+#      get directors
+#      get genres
+#      get budgets
+#      use API themoviedb.org
+#      get more years
+#      adjust for inflation
+
 # Bucket directors, studios?, actors by earnings/salaries.
 # Genres are not exclusive.
 
 # %%
-movie_for_full = movie_set.copy()
-
-del movie_for_full['Date']
-del movie_for_full['Distributor']
-
-lr_full = LinearRegression()
-
-X = movie_for_full.loc[:, 'Theaters':'WarnerBros.']
-
-y = movie_for_full['Gross']
-
-lr_full.fit(X, y)
-
-lr_full.score(X, y)
+write_csv(movie_data, 'data/imdb_data')
 # %%
-sm.add_constant(X).head()
-# %%
-model = sm.OLS(y, sm.add_constant(X))
-fit = model.fit()
-fit.summary()
-# %%
-plt.figure(figsize=(10, 7))
-plt.scatter(fit.predict(), fit.resid)
-
-plt.axhline(0, linestyle='--', color='gray')
-plt.xlabel('Predicted Values', fontsize=18)
-plt.ylabel('Residuals', fontsize=18)
-# %%
-lr_full = LinearRegression()
-X = movie_set[['Theaters', 'WaltDisneyStudiosMotionPictures', 'UniversalPictures',
-               'TwentiethCenturyFox', 'SonyPicturesEntertainment(SPE)', 'ParamountPictures', 'WarnerBros.']]
-y = movie_set['Gross']
-lr_full.fit(X, y)
-lr_full.score(X, y)
-
-# %%
-
-p = PolynomialFeatures()
-X_poly = p.fit_transform(X)
-
-lr_full = LinearRegression()
-lr_full.fit(X_poly, y)
-lr_full.score(X_poly, y)
-# %%
-X.shape
-# %%
-X_poly.shape
+test = read_csv('data/imdb_data')
 # %%
