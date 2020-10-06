@@ -1,4 +1,4 @@
-0,1,2,3,4,5,6
+Release,UserRating,Metascore,MPAA,Genres,Director,Budget
 Black Panther,7.3,88,PG-13,"['Action', 'Adventure', 'Sci-Fi', '16 February 2018 (USA)\n']","<a href=""/name/nm3363032/"">Ryan Coogler</a>","$200,000,000"
 Avengers: Infinity War,8.4,68,PG-13,"['Action', 'Adventure', 'Sci-Fi', '27 April 2018 (USA)\n']","<a href=""/name/nm0751577/"">Anthony Russo</a>","$321,000,000"
 Incredibles 2,7.6,80,PG,"['Animation', 'Action', 'Adventure', '15 June 2018 (USA)\n']","<a href=""/name/nm0083348/"">Brad Bird</a>","$200,000,000"
