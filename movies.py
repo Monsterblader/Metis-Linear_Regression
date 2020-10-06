@@ -491,7 +491,7 @@ def search_imdb(name):
 # %%
 
 # movie_data = []
-for title in all_movies[2394:][1]:
+for title in all_movies[6194:][1]:
     print(title)
     movie_data.append(search_imdb(title))
     time.sleep(.5+2*random.random())
@@ -508,10 +508,9 @@ for title in all_movies[2394:][1]:
 # TODO get list of old releases from actor and director filmographies
 
 # TODO get ratings discard 'G'
-#      get directors
+#      get directors - bucket by average movie rating
 #      get genres
 #      get budgets
-#      use API themoviedb.org
 #      get more years
 #      adjust for inflation
 
@@ -522,4 +521,6 @@ for title in all_movies[2394:][1]:
 write_csv(movie_data, 'data/imdb_data')
 # %%
 test = read_csv('data/imdb_data')
+# %%
+del test
 # %%
