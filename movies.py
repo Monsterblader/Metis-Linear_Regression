@@ -402,6 +402,7 @@ for director in filmography:
 all_data = pd.read_csv('data/all_data.csv')
 
 new_data = all_data[pd.notna(all_data['Metascore'])]
+
 new_data['MPAATrue'] = new_data['MPAA'].apply(
     lambda x: x == 'R' or x == 'PG' or x == 'PG-13')
 new_data = new_data[new_data['MPAATrue'] == True]
@@ -432,3 +433,28 @@ genres = ('Action', 'Adventure', 'Sci-Fi', 'Animation',
           'Comedy', 'Thriller', 'Drama', 'Music', 'Romance',
           'Fantasy', 'Biography', 'Horror', 'Crime', 'Sport', 'Mystery')
 # dummy genres, dumny rating, dummy month, dummy studio
+
+# %%
+# huh?
+
+
+def extract_director(node):
+    bs_node = BeautifulSoup(node, 'lxml')
+
+    return bs_node.html.body.a.contents[0]
+
+
+directors = single_data['Director'].apply(lambda x: extract_director(x))
+
+# %%
+single_data['Director'] = directors
+# %%
+rats = single_data.groupby('Director').mean()
+# %%
+single_data['DirUR'] = single_data['Director'].apply(
+    lambda x: rats.loc[x].UserRating)
+single_data['DirMS'] = single_data['Director'].apply(
+    lambda x: rats.loc[x].Metascore)
+
+
+# %%
